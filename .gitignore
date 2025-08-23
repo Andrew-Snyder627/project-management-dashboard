@@ -1,16 +1,15 @@
 # Python
+.venv/
 __pycache__/
 *.pyc
-*.pyo
-*.pyd
 *.db
 *.sqlite3
-.venv/
 
 # Node
 node_modules/
 dist/
 
-# Env files
+# Env
 .env
-
+backend/.env
+frontend/.env
