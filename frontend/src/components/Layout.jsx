@@ -15,7 +15,17 @@ export default function Layout({ children }) {
     <>
       <AppBar position="sticky" color="primary" enableColorOnDark>
         <Toolbar>
-          <Typography variant="h6" sx={{ flexGrow: 1 }}>
+          <Typography
+            variant="h6"
+            component={RouterLink}
+            to="/"
+            sx={{
+              flexGrow: 1,
+              color: "inherit",
+              textDecoration: "none",
+              "&:hover": { textDecoration: "underline" },
+            }}
+          >
             PM Productivity Dashboard
           </Typography>
           {user ? (

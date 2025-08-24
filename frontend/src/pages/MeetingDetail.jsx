@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { api } from "../api";
 import {
@@ -17,6 +17,11 @@ import {
   Divider,
   Alert,
   Snackbar,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  InputAdornment,
 } from "@mui/material";
 import SaveIcon from "@mui/icons-material/Save";
 import SummarizeIcon from "@mui/icons-material/Summarize";
@@ -24,6 +29,7 @@ import RefreshIcon from "@mui/icons-material/Refresh";
 import ContentCopyIcon from "@mui/icons-material/ContentCopy";
 import DownloadIcon from "@mui/icons-material/Download";
 import DeleteIcon from "@mui/icons-material/Delete";
+import TagIcon from "@mui/icons-material/Tag";
 
 export default function MeetingDetail() {
   const { id } = useParams();
@@ -46,6 +52,10 @@ export default function MeetingDetail() {
     msg: "",
     severity: "success",
   });
+
+  // Share to Slack dialog state
+  const [shareOpen, setShareOpen] = useState(false);
+  const [slackChannel, setSlackChannel] = useState("project-updates");
 
   const safeParse = (str, fallback) => {
     try {
@@ -136,8 +146,8 @@ export default function MeetingDetail() {
   const bullets = summary ? safeParse(summary.bullets_json, []) : [];
   const decisions = summary ? safeParse(summary.decisions_json, []) : [];
 
-  const copySummary = async () => {
-    const md = [
+  const markdownSummary = useMemo(() => {
+    const lines = [
       `# ${meeting?.title || "Meeting"}`,
       "",
       "## Key Points",
@@ -145,8 +155,12 @@ export default function MeetingDetail() {
       "",
       "## Decisions",
       ...decisions.map((d) => `- ${d}`),
-    ].join("\n");
-    await navigator.clipboard.writeText(md);
+    ];
+    return lines.join("\n");
+  }, [meeting, bullets, decisions]);
+
+  const copySummary = async () => {
+    await navigator.clipboard.writeText(markdownSummary);
     setToast({
       open: true,
       msg: "Summary copied to clipboard",
@@ -173,6 +187,20 @@ export default function MeetingDetail() {
     a.click();
     a.remove();
     URL.revokeObjectURL(url);
+  };
+
+  // --- Share to Slack dialog handlers (stretch placeholder) ---
+  const openShare = () => setShareOpen(true);
+  const closeShare = () => setShareOpen(false);
+  const doShare = async () => {
+    // Placeholder: copy to clipboard. Later: POST to backend Slack endpoint.
+    await navigator.clipboard.writeText(markdownSummary);
+    setToast({
+      open: true,
+      msg: `Summary copied (send to #${slackChannel})`,
+      severity: "success",
+    });
+    closeShare();
   };
 
   return (
@@ -268,6 +296,9 @@ export default function MeetingDetail() {
                   >
                     Download
                   </Button>
+                  <Button size="small" variant="outlined" onClick={openShare}>
+                    Share to Slack
+                  </Button>
                 </Stack>
               </Stack>
               {summary ? (
@@ -349,6 +380,45 @@ export default function MeetingDetail() {
           </Card>
         </Grid>
       </Grid>
+
+      {/* Slack Share Dialog (stretch placeholder) */}
+      <Dialog open={shareOpen} onClose={closeShare} fullWidth maxWidth="sm">
+        <DialogTitle>Share to Slack (Stretch)</DialogTitle>
+        <DialogContent dividers>
+          <Typography variant="body2" sx={{ mb: 2 }}>
+            For now, this will copy the message to your clipboard so you can
+            paste into Slack. Later, we’ll connect a Slack app / webhook to post
+            directly.
+          </Typography>
+          <TextField
+            label="Channel"
+            value={slackChannel}
+            onChange={(e) => setSlackChannel(e.target.value)}
+            fullWidth
+            sx={{ mb: 2 }}
+            InputProps={{
+              startAdornment: (
+                <InputAdornment position="start">
+                  <TagIcon fontSize="small" />
+                </InputAdornment>
+              ),
+            }}
+          />
+          <TextField
+            label="Preview"
+            value={markdownSummary}
+            fullWidth
+            multiline
+            minRows={6}
+          />
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={closeShare}>Cancel</Button>
+          <Button variant="contained" onClick={doShare}>
+            Copy & Close
+          </Button>
+        </DialogActions>
+      </Dialog>
 
       <Snackbar
         open={toast.open}
