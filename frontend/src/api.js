@@ -1,5 +1,11 @@
 const BASE_URL = "http://localhost:5000";
 
+// optional hook the app can register to handle 401s (e.g., redirect to /login)
+let unauthorizedHandler = null;
+export function setUnauthorizedHandler(fn) {
+  unauthorizedHandler = fn;
+}
+
 async function apiFetch(
   path,
   { method = "GET", body, headers = {}, etag } = {}
@@ -22,7 +28,13 @@ async function apiFetch(
   let json = null;
   try {
     json = text ? JSON.parse(text) : null;
-  } catch (_) {}
+  } catch {}
+
+  // Handle 401 centrally
+  if (res.status === 401) {
+    if (unauthorizedHandler) unauthorizedHandler();
+    throw new Error("401 unauthorized");
+  }
 
   if (!res.ok && json?.error) throw new Error(`${res.status} ${json.error}`);
 

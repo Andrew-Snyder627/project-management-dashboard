@@ -13,17 +13,32 @@ import {
   ListItem,
   ListItemButton,
   ListItemText,
+  IconButton,
+  Snackbar,
+  Alert,
 } from "@mui/material";
 import AddIcon from "@mui/icons-material/Add";
+import DeleteIcon from "@mui/icons-material/Delete";
 
 export default function Meetings() {
   const [meetings, setMeetings] = useState([]);
   const [title, setTitle] = useState("");
   const [raw, setRaw] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [toast, setToast] = useState({
+    open: false,
+    msg: "",
+    severity: "success",
+  });
 
   const load = async () => {
-    const { json } = await api.listMeetings();
-    setMeetings(json || []);
+    setLoading(true);
+    try {
+      const { json } = await api.listMeetings();
+      setMeetings(json || []);
+    } finally {
+      setLoading(false);
+    }
   };
   useEffect(() => {
     load();
@@ -35,6 +50,13 @@ export default function Meetings() {
     await api.createMeeting({ title, raw_notes: raw });
     setTitle("");
     setRaw("");
+    setToast({ open: true, msg: "Meeting created", severity: "success" });
+    await load();
+  };
+
+  const del = async (id) => {
+    await api.deleteMeeting(id);
+    setToast({ open: true, msg: "Meeting deleted", severity: "info" });
     await load();
   };
 
@@ -73,29 +95,58 @@ export default function Meetings() {
 
       <Card>
         <CardContent>
-          <List>
-            {meetings.map((m) => (
-              <ListItem key={m.id} disablePadding divider>
-                <ListItemButton component={RouterLink} to={`/meeting/${m.id}`}>
-                  <ListItemText
-                    primary={m.title}
-                    secondary={
-                      m.meeting_date
-                        ? new Date(m.meeting_date).toLocaleString()
-                        : "No date"
-                    }
-                  />
-                </ListItemButton>
-              </ListItem>
-            ))}
-            {meetings.length === 0 && (
-              <Typography sx={{ p: 2, color: "text.secondary" }}>
-                No meetings yet.
-              </Typography>
-            )}
-          </List>
+          {loading ? (
+            <Typography color="text.secondary">Loading…</Typography>
+          ) : (
+            <List>
+              {meetings.map((m) => (
+                <ListItem
+                  key={m.id}
+                  divider
+                  secondaryAction={
+                    <IconButton
+                      edge="end"
+                      aria-label="delete"
+                      onClick={() => del(m.id)}
+                    >
+                      <DeleteIcon />
+                    </IconButton>
+                  }
+                >
+                  <ListItemButton
+                    component={RouterLink}
+                    to={`/meeting/${m.id}`}
+                  >
+                    <ListItemText
+                      primary={m.title}
+                      secondary={
+                        m.meeting_date
+                          ? new Date(m.meeting_date).toLocaleString()
+                          : "No date"
+                      }
+                    />
+                  </ListItemButton>
+                </ListItem>
+              ))}
+              {meetings.length === 0 && (
+                <Typography sx={{ p: 2, color: "text.secondary" }}>
+                  No meetings yet.
+                </Typography>
+              )}
+            </List>
+          )}
         </CardContent>
       </Card>
+
+      <Snackbar
+        open={toast.open}
+        autoHideDuration={2500}
+        onClose={() => setToast({ ...toast, open: false })}
+      >
+        <Alert severity={toast.severity} variant="filled">
+          {toast.msg}
+        </Alert>
+      </Snackbar>
     </Box>
   );
 }

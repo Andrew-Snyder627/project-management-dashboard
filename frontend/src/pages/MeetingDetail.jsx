@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useParams } from "react-router-dom";
+import { useParams, useNavigate } from "react-router-dom";
 import { api } from "../api";
 import {
   Box,
@@ -16,16 +16,22 @@ import {
   Checkbox,
   Divider,
   Alert,
+  Snackbar,
 } from "@mui/material";
 import SaveIcon from "@mui/icons-material/Save";
 import SummarizeIcon from "@mui/icons-material/Summarize";
 import RefreshIcon from "@mui/icons-material/Refresh";
+import ContentCopyIcon from "@mui/icons-material/ContentCopy";
+import DownloadIcon from "@mui/icons-material/Download";
+import DeleteIcon from "@mui/icons-material/Delete";
 
 export default function MeetingDetail() {
   const { id } = useParams();
+  const navigate = useNavigate();
   const mid = Number(id);
 
   const [meeting, setMeeting] = useState(null);
+  const [title, setTitle] = useState("");
   const [notes, setNotes] = useState("");
   const [saving, setSaving] = useState(false);
 
@@ -35,6 +41,11 @@ export default function MeetingDetail() {
   const [items, setItems] = useState([]);
   const [newItem, setNewItem] = useState("");
   const [error, setError] = useState("");
+  const [toast, setToast] = useState({
+    open: false,
+    msg: "",
+    severity: "success",
+  });
 
   const safeParse = (str, fallback) => {
     try {
@@ -47,6 +58,7 @@ export default function MeetingDetail() {
   const loadMeeting = async () => {
     const { json } = await api.getMeeting(mid);
     setMeeting(json);
+    setTitle(json?.title || "");
     setNotes(json?.raw_notes || "");
   };
   const loadItems = async () => {
@@ -65,15 +77,18 @@ export default function MeetingDetail() {
     setError("");
     loadMeeting();
     loadItems();
-    // summary loaded on demand
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mid]);
 
-  const saveNotes = async () => {
+  const saveMeta = async () => {
     setSaving(true);
     try {
-      await api.updateMeeting(mid, { raw_notes: notes });
+      await api.updateMeeting(mid, {
+        title: title.trim() || "Untitled",
+        raw_notes: notes,
+      });
       await loadMeeting();
+      setToast({ open: true, msg: "Saved", severity: "success" });
     } catch (ex) {
       setError(ex.message);
     } finally {
@@ -87,6 +102,7 @@ export default function MeetingDetail() {
       await api.summarize(mid);
       setSummaryEtag(null);
       await loadSummary();
+      setToast({ open: true, msg: "Summary created", severity: "success" });
     } catch (ex) {
       setError(ex.message);
     }
@@ -111,15 +127,81 @@ export default function MeetingDetail() {
     await loadItems();
   };
 
+  const delMeeting = async () => {
+    await api.deleteMeeting(mid);
+    navigate("/");
+  };
+
   const meta = summary ? safeParse(summary.model_metadata, {}) : {};
   const bullets = summary ? safeParse(summary.bullets_json, []) : [];
   const decisions = summary ? safeParse(summary.decisions_json, []) : [];
 
+  const copySummary = async () => {
+    const md = [
+      `# ${meeting?.title || "Meeting"}`,
+      "",
+      "## Key Points",
+      ...bullets.map((b) => `- ${b}`),
+      "",
+      "## Decisions",
+      ...decisions.map((d) => `- ${d}`),
+    ].join("\n");
+    await navigator.clipboard.writeText(md);
+    setToast({
+      open: true,
+      msg: "Summary copied to clipboard",
+      severity: "info",
+    });
+  };
+
+  const downloadSummary = () => {
+    const payload = {
+      meeting_id: meeting?.id,
+      title: meeting?.title,
+      bullets,
+      decisions,
+      model_metadata: meta,
+    };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], {
+      type: "application/json",
+    });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `summary-${meeting?.id || "meeting"}.json`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  };
+
   return (
     <Box>
-      <Typography variant="h5" sx={{ mb: 2 }}>
-        {meeting?.title || "Meeting"}
-      </Typography>
+      <Stack direction="row" alignItems="center" spacing={2} sx={{ mb: 2 }}>
+        <TextField
+          label="Title"
+          value={title}
+          onChange={(e) => setTitle(e.target.value)}
+          sx={{ flex: 1, maxWidth: 480 }}
+        />
+        <Button
+          variant="outlined"
+          startIcon={<SaveIcon />}
+          onClick={saveMeta}
+          disabled={saving}
+        >
+          {saving ? "Saving..." : "Save"}
+        </Button>
+        <Button
+          color="error"
+          variant="text"
+          startIcon={<DeleteIcon />}
+          onClick={delMeeting}
+        >
+          Delete
+        </Button>
+      </Stack>
+
       {error && (
         <Alert severity="error" sx={{ mb: 2 }}>
           {error}
@@ -144,20 +226,19 @@ export default function MeetingDetail() {
               />
               <Stack direction="row" spacing={2} sx={{ mt: 2 }}>
                 <Button
-                  variant="outlined"
-                  startIcon={<SaveIcon />}
-                  onClick={saveNotes}
-                  disabled={saving}
-                >
-                  {saving ? "Saving..." : "Save notes"}
-                </Button>
-                <Button
                   variant="contained"
                   startIcon={<SummarizeIcon />}
                   onClick={summarize}
                   disabled={!notes.trim()}
                 >
                   Summarize
+                </Button>
+                <Button
+                  variant="outlined"
+                  startIcon={<RefreshIcon />}
+                  onClick={loadSummary}
+                >
+                  Load latest
                 </Button>
               </Stack>
             </CardContent>
@@ -172,13 +253,22 @@ export default function MeetingDetail() {
                 sx={{ mb: 1 }}
               >
                 <Typography variant="subtitle1">Latest Summary</Typography>
-                <Button
-                  size="small"
-                  startIcon={<RefreshIcon />}
-                  onClick={loadSummary}
-                >
-                  Load latest
-                </Button>
+                <Stack direction="row" spacing={1}>
+                  <Button
+                    size="small"
+                    startIcon={<ContentCopyIcon />}
+                    onClick={copySummary}
+                  >
+                    Copy
+                  </Button>
+                  <Button
+                    size="small"
+                    startIcon={<DownloadIcon />}
+                    onClick={downloadSummary}
+                  >
+                    Download
+                  </Button>
+                </Stack>
               </Stack>
               {summary ? (
                 <>
@@ -238,20 +328,15 @@ export default function MeetingDetail() {
               </form>
               <List>
                 {items.map((it) => (
-                  <ListItem
-                    key={it.id}
-                    divider
-                    secondaryAction={
-                      <Typography variant="caption" color="text.secondary">
-                        {it.status}
-                      </Typography>
-                    }
-                  >
+                  <ListItem key={it.id} divider>
                     <Checkbox
                       checked={it.status === "done"}
                       onChange={() => toggleDone(it)}
                     />
-                    <ListItemText primary={it.description} />
+                    <ListItemText
+                      primary={it.description}
+                      secondary={`Status: ${it.status}`}
+                    />
                   </ListItem>
                 ))}
                 {items.length === 0 && (
@@ -264,6 +349,16 @@ export default function MeetingDetail() {
           </Card>
         </Grid>
       </Grid>
+
+      <Snackbar
+        open={toast.open}
+        autoHideDuration={2000}
+        onClose={() => setToast({ ...toast, open: false })}
+      >
+        <Alert severity={toast.severity} variant="filled">
+          {toast.msg}
+        </Alert>
+      </Snackbar>
     </Box>
   );
 }

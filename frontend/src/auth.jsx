@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useState } from "react";
-import { api } from "./api";
+import { api, setUnauthorizedHandler } from "./api";
 
 const AuthCtx = createContext(null);
 
@@ -8,6 +8,12 @@ export function AuthProvider({ children }) {
   const [booted, setBooted] = useState(false);
 
   useEffect(() => {
+    // global 401 handler: clear user and bounce to login
+    setUnauthorizedHandler(() => {
+      setUser(null);
+      if (location.pathname !== "/login") location.replace("/login");
+    });
+
     (async () => {
       try {
         const { json } = await api.me();
