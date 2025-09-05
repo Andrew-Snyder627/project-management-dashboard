@@ -1,6 +1,7 @@
 from action_items_routes import bp_items
 from meetings_routes import bp_meetings
 from auth_routes import bp_auth
+from google_routes import bp_google
 from models import db
 from config import Settings
 from flask_migrate import Migrate
@@ -29,6 +30,7 @@ def create_app():
     app.register_blueprint(bp_auth)
     app.register_blueprint(bp_meetings)
     app.register_blueprint(bp_items)
+    app.register_blueprint(bp_google)
 
     @app.get("/")
     def health():

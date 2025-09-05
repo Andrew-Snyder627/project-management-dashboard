@@ -16,22 +16,34 @@ import {
   IconButton,
   Snackbar,
   Alert,
+  Tooltip,
+  Chip,
+  Link,
 } from "@mui/material";
 import AddIcon from "@mui/icons-material/Add";
 import DeleteIcon from "@mui/icons-material/Delete";
 import CalendarMonthIcon from "@mui/icons-material/CalendarMonth";
+import CloudDownloadIcon from "@mui/icons-material/CloudDownload";
 
 export default function Meetings() {
   const [meetings, setMeetings] = useState([]);
   const [title, setTitle] = useState("");
   const [raw, setRaw] = useState("");
   const [loading, setLoading] = useState(true);
+
+  // Google integration state
+  const [gStatusLoading, setGStatusLoading] = useState(true);
+  const [googleConnected, setGoogleConnected] = useState(false);
+  const [gEventsLoading, setGEventsLoading] = useState(false);
+  const [gEvents, setGEvents] = useState([]);
+
   const [toast, setToast] = useState({
     open: false,
     msg: "",
     severity: "success",
   });
 
+  // ---- Meetings ----
   const load = async () => {
     setLoading(true);
     try {
@@ -41,6 +53,7 @@ export default function Meetings() {
       setLoading(false);
     }
   };
+
   useEffect(() => {
     load();
   }, []);
@@ -61,57 +74,182 @@ export default function Meetings() {
     await load();
   };
 
-  const explainCalendar = () => {
+  // ---- Google Calendar ----
+  const checkGoogleStatus = async () => {
+    setGStatusLoading(true);
+    try {
+      const { json } = await api.googleStatus();
+      setGoogleConnected(Boolean(json?.connected));
+    } catch (e) {
+      setGoogleConnected(false);
+    } finally {
+      setGStatusLoading(false);
+    }
+  };
+
+  const loadGoogleEvents = async () => {
+    if (!googleConnected) return;
+    setGEventsLoading(true);
+    try {
+      const { json } = await api.listGoogleEvents();
+      setGEvents(Array.isArray(json) ? json : []);
+    } catch (e) {
+      setToast({
+        open: true,
+        msg: "Failed to load Google events",
+        severity: "error",
+      });
+      setGEvents([]);
+    } finally {
+      setGEventsLoading(false);
+    }
+  };
+
+  const connectGoogle = () => {
+    // Full page redirect to start OAuth
+    window.location.href = api.googleLoginUrl();
+  };
+
+  // On mount, and also when redirected back from OAuth, check status & maybe load events
+  useEffect(() => {
+    (async () => {
+      await checkGoogleStatus();
+    })();
+  }, []);
+
+  useEffect(() => {
+    if (googleConnected) {
+      loadGoogleEvents();
+    } else {
+      setGEvents([]);
+    }
+  }, [googleConnected]);
+
+  const importFromEvent = async (evt) => {
+    const title = evt.summary || "Calendar event";
+    // Backend accepts ISO 8601 for meeting_date; pass through if available.
+    const payload = {
+      title,
+      raw_notes: "", // could hydrate later by pulling attendees/desc
+      ...(evt.start ? { meeting_date: evt.start } : {}),
+    };
+    await api.createMeeting(payload);
     setToast({
       open: true,
-      msg: "Google Calendar integration is coming soon!",
-      severity: "info",
+      msg: `Imported "${title}"`,
+      severity: "success",
     });
+    await load();
   };
 
   return (
     <Box>
-      <Typography variant="h5" sx={{ mb: 2 }}>
-        Meetings
-      </Typography>
-
-      {/* Calendar integration placeholder */}
-      <Card
-        sx={{
-          mb: 3,
-          bgcolor: "background.default",
-          borderStyle: "dashed",
-          borderWidth: 1,
-          borderColor: "divider",
-        }}
+      <Stack
+        direction="row"
+        alignItems="center"
+        justifyContent="space-between"
+        sx={{ mb: 2 }}
       >
-        <CardContent>
-          <Stack
-            direction={{ xs: "column", sm: "row" }}
-            alignItems={{ sm: "center" }}
-            justifyContent="space-between"
-            spacing={2}
+        <Typography variant="h5">Meetings</Typography>
+        <Stack direction="row" spacing={1} alignItems="center">
+          <CalendarConnectionBadge
+            connected={googleConnected}
+            loading={gStatusLoading}
+          />
+          <Button
+            variant={googleConnected ? "outlined" : "contained"}
+            startIcon={<CalendarMonthIcon />}
+            onClick={connectGoogle}
           >
-            <Stack spacing={0.5}>
-              <Typography variant="subtitle1">
-                Google Calendar (coming soon)
-              </Typography>
-              <Typography variant="body2" color="text.secondary">
-                You’ll be able to connect your Google account to auto-import
-                meetings and notes, then summarize with one click.
-              </Typography>
-            </Stack>
-            <Button
-              variant="outlined"
-              startIcon={<CalendarMonthIcon />}
-              onClick={explainCalendar}
-            >
-              Connect Google
-            </Button>
-          </Stack>
-        </CardContent>
-      </Card>
+            {googleConnected ? "Re-connect Google" : "Connect Google"}
+          </Button>
+        </Stack>
+      </Stack>
 
+      {/* Google Calendar events panel (visible once connected) */}
+      {googleConnected && (
+        <Card
+          sx={{
+            mb: 3,
+            bgcolor: "background.default",
+            borderStyle: "dashed",
+            borderWidth: 1,
+            borderColor: "divider",
+          }}
+        >
+          <CardContent>
+            <Stack
+              direction={{ xs: "column", md: "row" }}
+              spacing={2}
+              justifyContent="space-between"
+              alignItems={{ md: "center" }}
+            >
+              <Stack spacing={0.5}>
+                <Typography variant="subtitle1">
+                  Upcoming Google Events
+                </Typography>
+                <Typography variant="body2" color="text.secondary">
+                  Select any event to import it as a meeting in this app.
+                </Typography>
+              </Stack>
+              <Button
+                onClick={loadGoogleEvents}
+                variant="outlined"
+                startIcon={<CloudDownloadIcon />}
+                disabled={gEventsLoading}
+              >
+                {gEventsLoading ? "Loading…" : "Refresh events"}
+              </Button>
+            </Stack>
+
+            <List sx={{ mt: 1 }}>
+              {gEvents.length === 0 && !gEventsLoading && (
+                <Typography sx={{ p: 2 }} color="text.secondary">
+                  No upcoming events found.
+                </Typography>
+              )}
+
+              {gEvents.map((evt) => (
+                <ListItem
+                  key={evt.id}
+                  divider
+                  secondaryAction={
+                    <Stack direction="row" spacing={1} alignItems="center">
+                      {evt.htmlLink && (
+                        <Tooltip title="Open in Google Calendar">
+                          <Link
+                            href={evt.htmlLink}
+                            target="_blank"
+                            rel="noreferrer"
+                          >
+                            <IconButton edge="end" size="small">
+                              <CalendarMonthIcon fontSize="small" />
+                            </IconButton>
+                          </Link>
+                        </Tooltip>
+                      )}
+                      <Button
+                        size="small"
+                        variant="contained"
+                        onClick={() => importFromEvent(evt)}
+                      >
+                        Import
+                      </Button>
+                    </Stack>
+                  }
+                >
+                  <ListItemText
+                    primary={evt.summary || "(No title)"}
+                    secondary={formatEventTimeRange(evt.start, evt.end)}
+                  />
+                </ListItem>
+              ))}
+            </List>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Create meeting */}
       <Card sx={{ mb: 3 }}>
         <CardContent>
           <Typography variant="subtitle1" sx={{ mb: 1 }}>
@@ -139,6 +277,7 @@ export default function Meetings() {
         </CardContent>
       </Card>
 
+      {/* Meetings list */}
       <Card>
         <CardContent>
           {loading ? (
@@ -195,4 +334,35 @@ export default function Meetings() {
       </Snackbar>
     </Box>
   );
+}
+
+function CalendarConnectionBadge({ connected, loading }) {
+  if (loading) return <Chip size="small" label="Checking Google…" />;
+  return connected ? (
+    <Chip size="small" color="success" label="Google Connected" />
+  ) : (
+    <Chip size="small" color="default" label="Google not connected" />
+  );
+}
+
+function formatEventTimeRange(startIso, endIso) {
+  if (!startIso && !endIso) return "";
+  try {
+    // Handles date-only (all-day) and dateTime strings
+    const start =
+      startIso?.length > 10
+        ? new Date(startIso)
+        : new Date(`${startIso}T00:00:00`);
+    const end =
+      endIso?.length > 10 ? new Date(endIso) : new Date(`${endIso}T00:00:00`);
+    const startStr =
+      startIso?.length > 10
+        ? start.toLocaleString()
+        : `${start.toLocaleDateString()} (all-day)`;
+    const endStr =
+      endIso?.length > 10 ? end.toLocaleString() : end.toLocaleDateString();
+    return `${startStr} → ${endStr}`;
+  } catch {
+    return startIso || "";
+  }
 }

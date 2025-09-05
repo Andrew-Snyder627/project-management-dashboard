@@ -1,4 +1,4 @@
-const BASE_URL = "http://localhost:5000";
+export const BASE_URL = "http://localhost:5000";
 
 // optional hook the app can register to handle 401s (e.g., redirect to /login)
 let unauthorizedHandler = null;
@@ -67,4 +67,10 @@ export const api = {
   updateItem: (id, d) =>
     apiFetch(`/action-items/${id}`, { method: "PATCH", body: d }),
   deleteItem: (id) => apiFetch(`/action-items/${id}`, { method: "DELETE" }),
+
+  // google calendar
+  googleStatus: () => apiFetch("/google/status"),
+  listGoogleEvents: () => apiFetch("/google/events"),
+  // For login we just navigate the browser; exposing the URL helps keep it DRY.
+  googleLoginUrl: () => `${BASE_URL}/google/login`,
 };

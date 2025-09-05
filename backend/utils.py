@@ -8,7 +8,6 @@ from cryptography.fernet import Fernet, InvalidToken
 def content_hash(*parts: str) -> str:
     """
     Stable SHA-256 hash for any number of string parts.
-    Use it to dedupe LLM runs (e.g., title + notes + prompt version).
     """
     h = hashlib.sha256()
     for p in parts:
@@ -19,7 +18,7 @@ def content_hash(*parts: str) -> str:
 def json_response(payload: str, status: int = 200, etag_value: str | None = None):
     """
     Return a raw JSON payload string (already serialized) with optional ETag.
-    NOTE: meetings_routes passes a JSON string (via json.dumps), so we keep it raw.
+    NOTE: meetings_routes passes a JSON string (via json.dumps).
     """
     resp = make_response(payload, status)
     resp.headers["Content-Type"] = "application/json"
@@ -31,12 +30,13 @@ def json_response(payload: str, status: int = 200, etag_value: str | None = None
 
 def check_if_none_match(etag_value: str) -> bool:
     """
-    Return True if the client's If-None-Match matches our ETag (so we can 304).
+    Return True if the client's If-None-Match matches ETag (so I can 304).
     """
     client_etag = request.headers.get("If-None-Match")
     return client_etag == etag_value
 
 # Encrypt/Decrypt Helpers
+# Will be used for OAuth
 
 
 def _fernet():
