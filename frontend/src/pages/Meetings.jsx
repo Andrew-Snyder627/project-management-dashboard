@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { api } from "../api";
 import { Link as RouterLink } from "react-router-dom";
 import {
@@ -34,6 +34,7 @@ export default function Meetings() {
   // Google integration state
   const [gStatusLoading, setGStatusLoading] = useState(true);
   const [googleConnected, setGoogleConnected] = useState(false);
+  const [hasCalendarScope, setHasCalendarScope] = useState(false);
   const [gEventsLoading, setGEventsLoading] = useState(false);
   const [gEvents, setGEvents] = useState([]);
 
@@ -42,6 +43,9 @@ export default function Meetings() {
     msg: "",
     severity: "success",
   });
+
+  // ---- URL query helper for post-callback messages ----
+  const query = useMemo(() => new URLSearchParams(window.location.search), []);
 
   // ---- Meetings ----
   const load = async () => {
@@ -79,19 +83,39 @@ export default function Meetings() {
     setGStatusLoading(true);
     try {
       const { json } = await api.googleStatus();
-      setGoogleConnected(Boolean(json?.connected));
-    } catch (e) {
+      const connected = Boolean(json?.connected);
+      setGoogleConnected(connected);
+      setHasCalendarScope(Boolean(json?.hasCalendar));
+      // If we’re connected but missing scope, nudge the user
+      if (connected && !json?.hasCalendar) {
+        setToast({
+          open: true,
+          severity: "warning",
+          msg: "Google is connected, but calendar permission wasn’t granted. Click “Re-connect Google” and check the box.",
+        });
+      }
+    } catch {
       setGoogleConnected(false);
+      setHasCalendarScope(false);
     } finally {
       setGStatusLoading(false);
     }
   };
 
   const loadGoogleEvents = async () => {
-    if (!googleConnected) return;
+    if (!googleConnected || !hasCalendarScope) return;
     setGEventsLoading(true);
     try {
-      const { json } = await api.listGoogleEvents();
+      const { status, json } = await api.listGoogleEvents();
+      if (status === 403 && json?.error === "missing_calendar_scope") {
+        setToast({
+          open: true,
+          severity: "warning",
+          msg: "Calendar permission wasn’t granted. Click “Re-connect Google” and check the box.",
+        });
+        setGEvents([]);
+        return;
+      }
       setGEvents(Array.isArray(json) ? json : []);
     } catch (e) {
       setToast({
@@ -106,31 +130,49 @@ export default function Meetings() {
   };
 
   const connectGoogle = () => {
-    // Full page redirect to start OAuth
+    // Full page redirect to backend OAuth start
     window.location.href = api.googleLoginUrl();
   };
 
-  // On mount, and also when redirected back from OAuth, check status & maybe load events
+  // On mount: show any message from callback (?google_error & ?help)
   useEffect(() => {
-    (async () => {
-      await checkGoogleStatus();
-    })();
+    const ge = query.get("google_error");
+    const help = query.get("help");
+    if (ge) {
+      setToast({
+        open: true,
+        severity: ge === "missing_calendar_scope" ? "warning" : "error",
+        msg:
+          (help && decodeURIComponent(help)) ||
+          (ge === "missing_calendar_scope"
+            ? "Calendar permission wasn’t granted. Click “Re-connect Google” and check the box."
+            : "Google connection failed. Please try again."),
+      });
+      // Clean the URL so it doesn't keep re-triggering
+      const url = new URL(window.location.href);
+      url.searchParams.delete("google_error");
+      url.searchParams.delete("help");
+      window.history.replaceState({}, "", url);
+    }
+    // Also check current connection status
+    checkGoogleStatus();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // When the status changes and we do have scope, load events
   useEffect(() => {
-    if (googleConnected) {
+    if (googleConnected && hasCalendarScope) {
       loadGoogleEvents();
     } else {
       setGEvents([]);
     }
-  }, [googleConnected]);
+  }, [googleConnected, hasCalendarScope]);
 
   const importFromEvent = async (evt) => {
     const title = evt.summary || "Calendar event";
-    // Backend accepts ISO 8601 for meeting_date; pass through if available.
     const payload = {
       title,
-      raw_notes: "", // could hydrate later by pulling attendees/desc
+      raw_notes: "",
       ...(evt.start ? { meeting_date: evt.start } : {}),
     };
     await api.createMeeting(payload);
@@ -154,6 +196,7 @@ export default function Meetings() {
         <Stack direction="row" spacing={1} alignItems="center">
           <CalendarConnectionBadge
             connected={googleConnected}
+            hasScope={hasCalendarScope}
             loading={gStatusLoading}
           />
           <Button
@@ -166,8 +209,8 @@ export default function Meetings() {
         </Stack>
       </Stack>
 
-      {/* Google Calendar events panel (visible once connected) */}
-      {googleConnected && (
+      {/* Google Calendar events panel (visible once connected + scoped) */}
+      {googleConnected && hasCalendarScope && (
         <Card
           sx={{
             mb: 3,
@@ -325,7 +368,7 @@ export default function Meetings() {
 
       <Snackbar
         open={toast.open}
-        autoHideDuration={2500}
+        autoHideDuration={3000}
         onClose={() => setToast({ ...toast, open: false })}
       >
         <Alert severity={toast.severity} variant="filled">
@@ -336,32 +379,60 @@ export default function Meetings() {
   );
 }
 
-function CalendarConnectionBadge({ connected, loading }) {
+function CalendarConnectionBadge({ connected, hasScope, loading }) {
   if (loading) return <Chip size="small" label="Checking Google…" />;
-  return connected ? (
-    <Chip size="small" color="success" label="Google Connected" />
-  ) : (
-    <Chip size="small" color="default" label="Google not connected" />
-  );
+
+  if (!connected) {
+    return <Chip size="small" color="default" label="Google not connected" />;
+  }
+
+  if (connected && !hasScope) {
+    return (
+      <Chip
+        size="small"
+        color="warning"
+        label="Calendar permission not granted"
+      />
+    );
+  }
+
+  return <Chip size="small" color="success" label="Google Connected" />;
 }
 
 function formatEventTimeRange(startIso, endIso) {
   if (!startIso && !endIso) return "";
   try {
-    // Handles date-only (all-day) and dateTime strings
+    // Handle date-only (YYYY-MM-DD) vs full dateTime
     const start =
-      startIso?.length > 10
+      startIso && startIso.length > 10
         ? new Date(startIso)
-        : new Date(`${startIso}T00:00:00`);
+        : startIso
+        ? new Date(`${startIso}T00:00:00`)
+        : null;
+
     const end =
-      endIso?.length > 10 ? new Date(endIso) : new Date(`${endIso}T00:00:00`);
+      endIso && endIso.length > 10
+        ? new Date(endIso)
+        : endIso
+        ? new Date(`${endIso}T00:00:00`)
+        : null;
+
     const startStr =
-      startIso?.length > 10
+      startIso && startIso.length > 10
         ? start.toLocaleString()
-        : `${start.toLocaleDateString()} (all-day)`;
+        : start
+        ? `${start.toLocaleDateString()} (all-day)`
+        : "";
+
     const endStr =
-      endIso?.length > 10 ? end.toLocaleString() : end.toLocaleDateString();
-    return `${startStr} → ${endStr}`;
+      endIso && endIso.length > 10
+        ? end.toLocaleString()
+        : end
+        ? end.toLocaleDateString()
+        : "";
+
+    if (startStr && endStr) return `${startStr} → ${endStr}`;
+    return startStr || endStr;
   } catch {
     return startIso || "";
   }
