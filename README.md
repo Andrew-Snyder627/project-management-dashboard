@@ -2,7 +2,7 @@
 
 ## 📌 Overview
 
-The **PM Productivity Dashboard** is a full-stack productivity app for project managers and teams. It helps capture **meeting notes**, generate **AI-powered summaries**, and manage **action items** — all in one central hub.
+The **PM Productivity Dashboard** is a full-stack productivity app for project managers and teams. It helps capture **meeting notes**, generate **AI-powered summaries**, sync with **Google Calendar**, and manage **action items** — all in one central hub.
 
 This MVP demonstrates:
 
@@ -10,6 +10,7 @@ This MVP demonstrates:
 - **Meeting CRUD workflows**
 - **Automated summarization (OpenAI-powered, with fallback)**
 - **Action item tracking**
+- **Google Calendar OAuth integration**
 - **Polished React frontend using Material UI**
 
 ---
@@ -32,6 +33,11 @@ This MVP demonstrates:
 - **Action Items**
   - Linked to meetings
   - CRUD (description, status, priority, due date, assignee)
+- **Google Integration**
+  - OAuth2 login with Google
+  - Securely stores encrypted access/refresh tokens
+  - Fetches upcoming calendar events
+  - Gracefully handles missing scope (e.g., user doesn’t check the “calendar access” box)
 
 ### Frontend (React + MUI)
 
@@ -47,6 +53,10 @@ This MVP demonstrates:
   - Trigger AI summarization
   - Display structured summary (bullets, decisions)
   - Add/manage action items
+- **Google Calendar integration**
+  - Connect / re-connect Google
+  - Import calendar events as meetings
+  - UI feedback if calendar scope is missing
 - **Design**
   - Material UI components
   - Custom theming
@@ -57,10 +67,11 @@ This MVP demonstrates:
 
 ## 🛠️ Tech Stack
 
-- **Backend:** Flask, Flask-SQLAlchemy, Flask-Migrate, bcrypt, OpenAI API
+- **Backend:** Flask, Flask-SQLAlchemy, Flask-Migrate, bcrypt, OpenAI API, Google API Client
 - **Frontend:** React (Vite), Material UI, React Router
 - **Database:** SQLite (dev), ready for PostgreSQL in production
 - **Auth:** Session cookies with SameSite + HttpOnly
+- **APIs:** Google OAuth 2.0, Google Calendar API
 
 ---
 
@@ -72,6 +83,7 @@ This MVP demonstrates:
 - Node.js 18+
 - npm or yarn
 - OpenAI API key (for full summarization)
+- Google Cloud OAuth client (Client ID, Secret, Redirect URI)
 
 ### Setup – Backend
 
@@ -81,18 +93,18 @@ python -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 cp .env.example .env
-# edit .env and add your OpenAI key
+# edit .env and add your OpenAI key + Google OAuth credentials
 flask db upgrade
 python app.py
 ```
 
 ### Setup – Frontend
 
-# Run these commands
-
+```bash
 cd frontend
 npm install
 npm run dev
+```
 
 The app will be available at:
 
@@ -105,35 +117,45 @@ The app will be available at:
 
 ### Backend (.env)
 
-FLASK_ENV=development  
-FLASK_SECRET_KEY=change-me  
-DATABASE_URL=sqlite:///app.db  
+```ini
+FLASK_ENV=development
+FLASK_SECRET_KEY=change-me
+DATABASE_URL=sqlite:///app.db
 FRONTEND_ORIGIN=http://localhost:5173
 
-# Optional: OpenAI integration
-
-LLM_PROVIDER=openai  
-OPENAI_API_KEY=your-key-here  
-OPENAI_MODEL=gpt-4o-mini  
+# OpenAI integration
+LLM_PROVIDER=openai
+OPENAI_API_KEY=your-key-here
+OPENAI_MODEL=gpt-4o-mini
 PROMPT_VERSION=v1
+
+# Google OAuth integration
+GOOGLE_CLIENT_ID=your-client-id
+GOOGLE_CLIENT_SECRET=your-client-secret
+GOOGLE_REDIRECT_URI=http://localhost:5000/google/callback
+
+# Local dev helpers
+# Allow HTTP for OAuth in local dev ONLY
+OAUTHLIB_INSECURE_TRANSPORT=1
+```
 
 ---
 
-## 🚀 Features
+## 🚀 Core Features
 
 - **Authentication** – session-based login/signup/logout with Flask + bcrypt
 - **Meetings** – create, edit, delete, and fetch meetings with notes & dates
 - **Summarization** – AI-powered (OpenAI GPT) or stub fallback, schema-validated
 - **Action Items** – add, update, complete, or delete items linked to meetings
+- **Google Calendar** – connect account, import events, graceful handling if the user forgets to check the calendar permission box
 - **ETag caching** – efficient fetches, prevents redundant summarization calls
 - **Frontend** – React + Vite + MUI dashboard with Meetings and Meeting Detail pages
-- **Extensible** – groundwork laid for Google Calendar + Slack integrations
 
 ---
 
 ## 📦 Tech Stack
 
-**Backend:** Flask, Flask-SQLAlchemy, Flask-Migrate, bcrypt, OpenAI API  
+**Backend:** Flask, Flask-SQLAlchemy, Flask-Migrate, bcrypt, OpenAI API, Google API Client  
 **Frontend:** React (Vite), React Router, Material UI (MUI)  
 **Database:** SQLite (easy local dev), via SQLAlchemy ORM
 
@@ -143,10 +165,13 @@ PROMPT_VERSION=v1
 
 - Backend tested via `curl` and session cookies for auth + CRUD endpoints
 - Summarization tested with both stub + OpenAI provider
-- Frontend tested manually: login, meetings list, meeting details, summarization, action items
+- Google Calendar integration tested with valid OAuth and with the “missing calendar scope” path
+- Frontend tested manually: login, meetings list, meeting details, summarization, action items, Google connect flow
+
+---
 
 ## 👤 Author & Project Context
 
 **Created by:** Andrew Snyder  
 **Program:** Flatiron School – Software Engineering  
-**Context:** This application was developed as part of the Flatiron School Software Development program to demonstrate full-stack engineering skills—covering backend APIs (Flask/SQLAlchemy), frontend UI/UX (React + MUI), authentication, database modeling, and AI integration for real-world productivity use cases.
+**Context:** This application was developed as part of the Flatiron School Software Development program to demonstrate full-stack engineering skills—covering backend APIs (Flask/SQLAlchemy), frontend UI/UX (React + MUI), authentication, database modeling, and integrations with both AI and Google APIs for real-world productivity use cases.
